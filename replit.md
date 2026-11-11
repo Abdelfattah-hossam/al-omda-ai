@@ -1,15 +1,16 @@
-# [Project name]
+# AL OMDA AI
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Arabic-first AI agent marketplace and task workspace. The current MVP is a local browser preview with per-step plan approvals; it does not connect to an AI provider or execute external actions.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/al-omda-ai run dev` — run the web preview
+- `pnpm --filter @workspace/al-omda-ai run build` — build the static web app
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- The web preview has no required secrets or external account setup.
 
 ## Stack
 
@@ -22,23 +23,31 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/al-omda-ai/src/App.tsx` — app views, bilingual strings, local demo data, and task approval behavior
+- `artifacts/al-omda-ai/src/index.css` — dark theme, RTL-aware layout, and responsive styles
+- `README.md` — local run instructions and future GitHub, Cloudflare Pages, and Supabase setup notes
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Keep the first MVP browser-only so it works without accounts or secrets.
+- Clearly label deterministic plans and seeded tasks as previews; approval is not execution.
+- Keep Cloudflare Pages as a static UI target until a server-side runtime and shared storage are intentionally added.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Users can explore six specialist categories, draft a request, inspect a proposed plan, and approve, reject, or edit each step. They can pause or stop tasks, review task history, and set local profile and language preferences.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Arabic-first with full RTL support and an English language option.
+- Never expose API keys or secrets in frontend code.
+- Do not claim AI integrations work until configured; do not perform external actions without explicit approval.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Task and profile data currently live only in browser `localStorage`; they are not shared between devices or users.
+- The shared API and database packages are workspace scaffolding and are not connected to this MVP.
+- For Cloudflare Pages, use the build settings documented in `README.md`; the Vite config defaults to the domain root without workflow-provided `BASE_PATH`.
 
 ## Pointers
 

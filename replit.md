@@ -29,9 +29,11 @@ Arabic-first AI agent marketplace and task workspace. The current MVP is a local
 
 ## Architecture decisions
 
-- Keep the first MVP browser-only so it works without accounts or secrets.
+- Keep the app usable as a clearly labeled local preview when Supabase is not configured.
+- Route Supabase Auth, profile/task data, and private avatar storage through the API server; keep the publishable key server-side and never use a service-role key.
+- Apply user-scoped RLS and use the signed-in user's token for database and storage calls.
 - Clearly label deterministic plans and seeded tasks as previews; approval is not execution.
-- Keep Cloudflare Pages as a static UI target until a server-side runtime and shared storage are intentionally added.
+- Treat Cloudflare Pages as a static UI target until the `/api` service is also hosted and routed.
 
 ## Product
 
@@ -46,7 +48,8 @@ Users can explore six specialist categories, draft a request, inspect a proposed
 ## Gotchas
 
 - Task and profile data currently live only in browser `localStorage`; they are not shared between devices or users.
-- The shared API and database packages are workspace scaffolding and are not connected to this MVP.
+- `supabase/setup.sql` is the manual SQL setup for profiles, tasks, RLS, and the private avatar bucket.
+- Replit preview routes `/api` to the API server. Cloudflare Pages alone does not host the API.
 - For Cloudflare Pages, use the build settings documented in `README.md`; the Vite config defaults to the domain root without workflow-provided `BASE_PATH`.
 
 ## Pointers

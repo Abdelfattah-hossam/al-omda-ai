@@ -40,21 +40,27 @@ The repository is already initialized for Git. To publish it through GitHub and 
 
 The Vite build defaults to the domain root when `BASE_PATH` is not supplied, which matches the current Cloudflare Pages setup. The Pages deployment hosts the UI only; it does not deploy this workspace's separate API server or provide shared user data.
 
-## Supabase integration — not connected
+## Supabase authentication and storage
 
-The current app does not require a Supabase account. Before adding accounts or shared task history:
+The API server now supports email/password Supabase Auth, user-owned profile/task records, and private profile-avatar storage. The browser calls the same-origin `/api` service; Supabase credentials and session tokens stay on the server in Replit Secrets / HTTP-only cookies. The server uses the signed-in user's access token with Supabase RLS; it does not use a service-role key.
 
-1. Create a Supabase project and choose the authentication methods and redirect URLs.
-2. Agree on the account and task data model, then create migrations and enable row-level security so each user can access only their own data.
-3. Decide where authenticated API requests will run. Cloudflare Pages currently serves only the static UI; shared persistence requires a server-side API or an intentionally designed Cloudflare runtime.
-4. Configure credentials only after explaining where each value is stored and how it is used. Never put a Supabase service-role key or AI-provider secret in browser code or the built JavaScript. Supabase's anon/publishable key is designed to be visible in browser apps, but must be protected by row-level security; if no key may appear in the browser at all, use a server-side auth/API design instead.
-5. Replace browser-only storage with authenticated persistence and verify data isolation before enabling real accounts.
+### One-time Supabase setup
 
-No Supabase Replit integration is connected in this project. Connecting Supabase directly will require a Supabase account and an explicit setup decision; the preview continues to work without either.
+1. In the Supabase project, open **SQL Editor** and run `supabase/setup.sql`. It creates the profile and task tables, the new-user profile trigger, user-scoped RLS policies, and a private `user-avatars` bucket. The script does not delete user records.
+2. In Supabase **Authentication → URL Configuration**, set the Site URL to the app address used for email confirmation. Add any development or production app addresses to the allowed redirect URLs before testing email confirmation.
+3. In **Project Settings → API Keys**, copy the Project URL and the publishable key. Add `SUPABASE_URL` as a shared environment variable and `SUPABASE_PUBLISHABLE_KEY` as a Replit Secret for the API server. Do not use the `service_role` or secret key.
+4. Restart the API server and open the app's **Profile → Supabase account** panel. Create an account or sign in; if email confirmation is enabled, confirm the address and then sign in.
+5. Test with a profile edit, a proposed task, one approval, and an avatar upload. The account should only see its own records and image. The plan itself remains a local deterministic preview—not AI output or task execution.
+
+No paid service is required by this integration code. Supabase plan limits and email delivery options are controlled by Supabase and can change; check the project dashboard before scaling usage.
+
+### Hosting boundary
+
+The Replit preview routes `/api` to `artifacts/api-server`. Cloudflare Pages currently serves only the static UI and does not host that API. For a Cloudflare deployment, the API must also be deployed to a server-side runtime and `/api` routed to it; the browser bundle must not receive Supabase keys or session tokens. The static preview still works locally when Supabase settings are absent, and clearly remains local-only.
 
 ## Project structure
 
 - `artifacts/al-omda-ai/` — AL OMDA AI web app
-- `artifacts/api-server/` — shared API service scaffold; not used by this MVP
+- `artifacts/api-server/` — same-origin API for Supabase auth, user-scoped data, and private avatars
 - `lib/` — shared API, database, and validation packages from the workspace scaffold
 

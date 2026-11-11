@@ -1,5 +1,20 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
+import {
+  createTask as apiCreateTask,
+  getAuthSession,
+  getAuthStatus,
+  getWorkspace,
+  signIn as apiSignIn,
+  signOut as apiSignOut,
+  signUp as apiSignUp,
+  updateProfile as apiUpdateProfile,
+  updateTask as apiUpdateTask,
+  uploadAvatar as apiUploadAvatar,
+  type AuthUser as ApiAuthUser,
+  type Task as ApiTask,
+  type Workspace as ApiWorkspace,
+} from '@workspace/api-client-react';
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUpLeft, BadgeCheck,
   Bot, BriefcaseBusiness, Check, CheckCheck, ChevronDown,
@@ -27,6 +42,7 @@ const translations = {
     desc_business:'خطط واضحة للنمو والعمليات وقرارات العمل.', desc_development:'تفكيك المتطلبات إلى خطوات تقنية قابلة للمراجعة.', desc_design:'تحويل الأفكار إلى موجزات وتجارب مرئية.', desc_marketing:'رسائل وحملات وخطط محتوى عملية.', desc_research:'أسئلة منظمة ومحاور بحث قابلة للتحقق.', desc_assistant:'تنظيم الأولويات والمهام اليومية باهتمام.',
     label_business:'استراتيجية وتشغيل', label_development:'هندسة ومنتج', label_design:'تجربة وهوية', label_marketing:'نمو ومحتوى', label_research:'تحليل واكتشاف', label_assistant:'تنظيم يومي',
     plan1:'تحديد النتيجة المطلوبة ونطاق المهمة', plan2:'تقسيم العمل إلى مخرجات قابلة للمراجعة', plan3:'تجهيز ملخص وتسليم للمراجعة النهائية', plan4:'مراجعة المخاطر والافتراضات معك',
+    authAccount:'حساب Supabase', authUnavailable:'إعدادات Supabase غير متاحة حالياً. سيبقى هذا العرض محلياً على هذا الجهاز.', authConfigured:'تسجيل الدخول يحفظ مهامك وملفك في مساحة خاصة بحسابك.', authChecking:'جارٍ التحقق من إعدادات الحساب...', email:'البريد الإلكتروني', password:'كلمة المرور', signIn:'تسجيل الدخول', signUp:'إنشاء حساب', switchToSignUp:'ليس لديك حساب؟ أنشئ حساباً', switchToSignIn:'لديك حساب بالفعل؟ سجّل الدخول', signOut:'تسجيل الخروج', emailConfirmation:'تحقق من بريدك الإلكتروني لتأكيد الحساب، ثم سجّل الدخول.', signedInAs:'تم تسجيل الدخول باسم', avatar:'الصورة الشخصية', uploadAvatar:'رفع صورة', avatarHint:'PNG أو JPEG أو WebP، بحد أقصى 5 ميجابايت. الصورة خاصة بحسابك.', authWorking:'جارٍ حفظ التغييرات...', localOnly:'معاينة محلية فقط', apiUnavailable:'تعذر الاتصال بخادم الحسابات. ما زالت المعاينة المحلية متاحة.', saveTaskFailed:'تعذر حفظ المهمة في Supabase.', profileSaved:'تم حفظ الملف في حسابك.',
     confirmStop:'هل تريد إيقاف هذه المهمة؟', active:'نشط', availableFor:'اختصاص متاح', privacy:'خصوصية وتحكم', assistantLabel:'موجّه AL OMDA', noMore:'هذا العرض لا يتصل بأي خدمة خارجية.', chatWelcome:'أهلاً بك. صف المهمة التي تريد تفويضها، وسأعرض لك تصوراً محلياً لتراجعه.', localResponse:'هذا تصور توضيحي مبني على قالب محلي. لا يتصل بذكاء اصطناعي ولا ينفّذ أي خطوة.',
   },
   en: {
@@ -39,6 +55,7 @@ const translations = {
     desc_business:'Clear growth, operations, and business decision plans.', desc_development:'Break requirements into technical steps for review.', desc_design:'Turn ideas into clear briefs and visual experiences.', desc_marketing:'Practical messaging, campaigns, and content plans.', desc_research:'Structured questions and verifiable research themes.', desc_assistant:'Thoughtful organization for everyday priorities.',
     label_business:'Strategy & operations', label_development:'Engineering & product', label_design:'Experience & identity', label_marketing:'Growth & content', label_research:'Analysis & discovery', label_assistant:'Daily organization',
     plan1:'Clarify the intended outcome and scope', plan2:'Break the work into reviewable deliverables', plan3:'Prepare a summary for your final review', plan4:'Review assumptions and risks with you',
+    authAccount:'Supabase account', authUnavailable:'Supabase settings are not available yet. This preview will remain local to this device.', authConfigured:'Signing in saves your tasks and profile to your private account space.', authChecking:'Checking account setup...', email:'Email address', password:'Password', signIn:'Sign in', signUp:'Create account', switchToSignUp:'New here? Create an account', switchToSignIn:'Already have an account? Sign in', signOut:'Sign out', emailConfirmation:'Check your email to confirm the account, then sign in.', signedInAs:'Signed in as', avatar:'Profile image', uploadAvatar:'Upload image', avatarHint:'PNG, JPEG, or WebP, up to 5 MB. Your image stays private to your account.', authWorking:'Saving changes...', localOnly:'Local preview only', apiUnavailable:'Could not reach the account server. The local preview is still available.', saveTaskFailed:'Could not save the task to Supabase.', profileSaved:'Profile saved to your account.',
     confirmStop:'Stop this task?', active:'Active', availableFor:'Specialty available', privacy:'Privacy & control', assistantLabel:'AL OMDA Orchestrator', noMore:'This preview does not connect to any external service.', chatWelcome:'Welcome. Describe what you want to delegate, and I’ll show a local outline for you to review.', localResponse:'This is an illustrative outline from a local template. It does not call AI or execute any step.',
   },
 } as const;
@@ -84,6 +101,22 @@ function readInitial(): { language:Language; tasks:Task[]; name:string; org:stri
   } catch { /* use seeded local preview */ }
   return { language:'ar', tasks:starterTasks, name:'مستخدم العمْدة', org:'مشروعك', notices:true };
 }
+const apiRequestOptions = { credentials:'same-origin' as const };
+function readApiError(error:unknown, fallback:string):string {
+  if (error && typeof error === 'object' && 'data' in error) {
+    const data = (error as {data?:unknown}).data;
+    if (data && typeof data === 'object' && 'error' in data && typeof (data as {error?:unknown}).error === 'string') {
+      return (data as {error:string}).error;
+    }
+    if (data && typeof data === 'object') {
+      const fields = data as Record<string,unknown>;
+      for (const key of ['message','msg','error_description']) {
+        if (typeof fields[key] === 'string') return fields[key] as string;
+      }
+    }
+  }
+  return error instanceof Error && !error.message.startsWith('HTTP ') ? error.message : fallback;
+}
 const taskStatusKey = (status:TaskStatus): TranslationKey => status === 'approved' ? 'completed' : status === 'paused' ? 'paused' : status === 'stopped' ? 'stopped' : 'reviewStatus';
 const specialtyKey = (id:Specialty): TranslationKey => `cat_${id}` as TranslationKey;
 const specialtyDesc = (id:Specialty): TranslationKey => `desc_${id}` as TranslationKey;
@@ -106,6 +139,20 @@ function App() {
   const [profileOrg, setProfileOrg] = useState(org);
   const [savedToast, setSavedToast] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [authStatus, setAuthStatus] = useState<'checking'|'unconfigured'|'configured'|'offline'>('checking');
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authUser, setAuthUser] = useState<ApiAuthUser | null>(null);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authMode, setAuthMode] = useState<'login'|'signup'>('login');
+  const [authWorking, setAuthWorking] = useState(false);
+  const [authError, setAuthError] = useState('');
+  const [authNotice, setAuthNotice] = useState('');
+  const [workspaceError, setWorkspaceError] = useState('');
+  const [avatarPath, setAvatarPath] = useState<string | null>(null);
+  const [avatarVersion, setAvatarVersion] = useState(0);
+  const [avatarWorking, setAvatarWorking] = useState(false);
+  const taskWriteQueue = useRef(new Map<string, Promise<void>>());
   const path = location.split('?')[0];
   const detailMatch = path.match(/^\/history\/([^/]+)$/);
   const currentTask = useMemo(() => tasks.find((task) => task.id === (detailMatch?.[1] ?? selectedTaskId ?? new URLSearchParams(window.location.search).get('task'))), [tasks, detailMatch?.[1], selectedTaskId, location]);
@@ -117,24 +164,190 @@ function App() {
     document.documentElement.classList.add('dark');
   }, [language]);
   useEffect(() => {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(saved)); } catch { /* demo remains usable without storage */ }
-  }, [saved]);
+    if (authLoading) return;
+    const localSnapshot = authUser
+      ? { ...saved, tasks:starterTasks, name:'مستخدم العمْدة', org:'مشروعك' }
+      : saved;
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(localSnapshot)); } catch { /* local preview remains usable without storage */ }
+  }, [saved, authLoading, authUser]);
+  const applyWorkspace = (workspace:ApiWorkspace, email:string) => {
+    const remoteName = workspace.profile.displayName.trim() || email;
+    const remoteOrg = workspace.profile.organization.trim() || (language === 'ar' ? 'مساحة العمل' : 'Workspace');
+    setSaved((prev) => ({ ...prev, name:remoteName, org:remoteOrg, tasks:workspace.tasks as Task[] }));
+    setProfileName(remoteName);
+    setProfileOrg(remoteOrg);
+    setAvatarPath(workspace.profile.avatarPath);
+  };
+  useEffect(() => {
+    let cancelled = false;
+    const initializeAccount = async () => {
+      try {
+        const status = await getAuthStatus(apiRequestOptions);
+        if (cancelled) return;
+        if (!status.configured) {
+          setAuthStatus('unconfigured');
+          return;
+        }
+        setAuthStatus('configured');
+        const session = await getAuthSession(apiRequestOptions);
+        if (cancelled || !session.user) return;
+        setAuthUser(session.user);
+        setSaved((prev) => ({ ...prev, tasks:[], name:session.user!.email, org:language === 'ar' ? 'مساحة العمل' : 'Workspace' }));
+        setProfileName(session.user.email);
+        setProfileOrg(language === 'ar' ? 'مساحة العمل' : 'Workspace');
+        try {
+          const workspace = await getWorkspace(apiRequestOptions);
+          if (!cancelled) applyWorkspace(workspace, session.user.email);
+        } catch (error) {
+          if (!cancelled) setWorkspaceError(readApiError(error, t('saveTaskFailed')));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAuthStatus('offline');
+          setAuthError(readApiError(error, t('apiUnavailable')));
+        }
+      } finally {
+        if (!cancelled) setAuthLoading(false);
+      }
+    };
+    void initializeAccount();
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     if (requestedSpecialty && specialties.some(({id})=>id===requestedSpecialty)) setSelectedSpecialty(requestedSpecialty as Specialty);
   }, [requestedSpecialty]);
 
-  const patchTask = (id:string, updater:(task:Task)=>Task) => setSaved((prev) => ({ ...prev, tasks:prev.tasks.map((task) => task.id === id ? updater(task) : task) }));
+  const saveRemoteTask = (task:Task) => {
+    const write = () => apiUpdateTask(task.id, {
+      title:task.title, request:task.request, specialty:task.specialty, steps:task.steps, status:task.status,
+    }, apiRequestOptions).then(() => undefined);
+    const previous = taskWriteQueue.current.get(task.id) ?? Promise.resolve();
+    const pending = previous.catch(() => undefined).then(write);
+    taskWriteQueue.current.set(task.id, pending);
+    void pending.catch((error) => setWorkspaceError(readApiError(error, t('saveTaskFailed')))).finally(() => {
+      if (taskWriteQueue.current.get(task.id) === pending) taskWriteQueue.current.delete(task.id);
+    });
+  };
+  const patchTask = (id:string, updater:(task:Task)=>Task) => {
+    const current = saved.tasks.find((task) => task.id === id);
+    if (!current) return;
+    const updated = updater(current);
+    setSaved((prev) => ({ ...prev, tasks:prev.tasks.map((task) => task.id === id ? updated : task) }));
+    if (authUser && !current.demo) saveRemoteTask(updated);
+  };
   const toggleLanguage = () => setSaved((prev) => ({ ...prev, language:prev.language === 'ar' ? 'en' : 'ar' }));
-  const createPlan = (event:FormEvent) => {
+  const createPlan = async (event:FormEvent) => {
     event.preventDefault();
     if (!request.trim()) return;
     const title = request.trim().split(/[.!؟?]/)[0].slice(0,70) || (isAr ? 'طلب جديد' : 'New request');
-    const steps = localPlanTemplates[language][selectedSpecialty].map((text,index) => ({ id:`${Date.now()}-${index}`, text, state:'pending' as StepState }));
-    const task:Task = { id:`task-${Date.now()}`, title, request:request.trim(), specialty:selectedSpecialty, steps, status:'review', createdAt:new Date().toISOString() };
+    const steps = localPlanTemplates[language][selectedSpecialty].map((text) => ({ id:crypto.randomUUID(), text, state:'pending' as StepState }));
+    let task:Task = { id:`task-${Date.now()}`, title, request:request.trim(), specialty:selectedSpecialty, steps, status:'review', createdAt:new Date().toISOString() };
+    if (authUser) {
+      try {
+        const remote = await apiCreateTask({ title:task.title, request:task.request, specialty:task.specialty, steps:task.steps, status:task.status }, apiRequestOptions);
+        task = remote as Task;
+      } catch (error) {
+        setWorkspaceError(readApiError(error, t('saveTaskFailed')));
+        return;
+      }
+    }
     setSaved((prev) => ({ ...prev, tasks:[task,...prev.tasks] }));
     setRequest('');
     setSelectedTaskId(task.id);
     setLocation(`/workbench?task=${task.id}`);
+  };
+  const handleAuthSubmit = async (event:FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAuthWorking(true);
+    setAuthError('');
+    setAuthNotice('');
+    setWorkspaceError('');
+    try {
+      const credentials = { email:authEmail.trim(), password:authPassword };
+      const result = authMode === 'signup'
+        ? await apiSignUp(credentials, apiRequestOptions)
+        : await apiSignIn(credentials, apiRequestOptions);
+      if (result.emailConfirmationRequired) {
+        setAuthNotice(t('emailConfirmation'));
+        setAuthMode('login');
+        setAuthPassword('');
+        return;
+      }
+      if (!result.user) throw new Error(t('apiUnavailable'));
+      setAuthUser(result.user);
+      setSaved((prev) => ({ ...prev, tasks:[], name:result.user!.email, org:isAr ? 'مساحة العمل' : 'Workspace' }));
+      setProfileName(result.user.email);
+      setProfileOrg(isAr ? 'مساحة العمل' : 'Workspace');
+      const workspace = await getWorkspace(apiRequestOptions);
+      applyWorkspace(workspace, result.user.email);
+      setAuthPassword('');
+    } catch (error) {
+      setAuthError(readApiError(error, t('apiUnavailable')));
+    } finally {
+      setAuthWorking(false);
+    }
+  };
+  const handleSignOut = async () => {
+    setAuthWorking(true);
+    try {
+      await apiSignOut(apiRequestOptions);
+    } catch {
+      // Clearing the local view is still required if the remote revoke is unavailable.
+    } finally {
+      setAuthUser(null);
+      setAvatarPath(null);
+      setWorkspaceError('');
+      const local = readInitial();
+      setSaved(local);
+      setProfileName(local.name);
+      setProfileOrg(local.org);
+      setAuthPassword('');
+      setAuthNotice('');
+      setAuthError('');
+      setAuthWorking(false);
+    }
+  };
+  const handleSaveProfile = async () => {
+    const displayName = profileName.trim() || name;
+    const organization = profileOrg.trim() || org;
+    setWorkspaceError('');
+    if (authUser) {
+      try {
+        const profile = await apiUpdateProfile({ displayName, organization }, apiRequestOptions);
+        setProfileName(profile.displayName);
+        setProfileOrg(profile.organization);
+        setSaved((prev) => ({ ...prev, name:profile.displayName, org:profile.organization }));
+        setAuthNotice(t('profileSaved'));
+      } catch (error) {
+        setWorkspaceError(readApiError(error, t('saveTaskFailed')));
+        return;
+      }
+    } else {
+      setSaved((prev) => ({ ...prev, name:displayName, org:organization }));
+    }
+    setSavedToast(true);
+    window.setTimeout(() => setSavedToast(false), 2200);
+  };
+  const handleAvatarUpload = async (event:ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024 || !['image/png','image/jpeg','image/webp'].includes(file.type)) {
+      setWorkspaceError(t('avatarHint'));
+      return;
+    }
+    setAvatarWorking(true);
+    setWorkspaceError('');
+    try {
+      const result = await apiUploadAvatar(file, { ...apiRequestOptions, headers:{'Content-Type':file.type} });
+      setAvatarPath(result.path);
+      setAvatarVersion(Date.now());
+      setAuthNotice(t('profileSaved'));
+    } catch (error) {
+      setWorkspaceError(readApiError(error, t('saveTaskFailed')));
+    } finally {
+      setAvatarWorking(false);
+    }
   };
   const approveStep = (task:Task, stepId:string) => {
     const stepIndex = task.steps.findIndex((step) => step.id === stepId);
@@ -214,7 +427,7 @@ function App() {
       <div className="stats-grid">
         {[{label:t('activeTasks'),value:active,foot:t('reviewStatus'),icon:Activity},{label:t('approvedPlans'),value:approved,foot:t('noExecution'),icon:BadgeCheck},{label:t('specialists'),value:6,foot:t('allSix'),icon:Bot},{label:t('totalTasks'),value:tasks.length,foot:t('preview'),icon:FileText}].map((stat,index)=><div className="panel stat-card" key={stat.label} data-testid={`stat-card-${index}`}><div className="stat-label">{stat.label}</div><div className="stat-value"><span>{stat.value}</span><stat.icon size={16} color="#c6a76c"/></div><div className="stat-foot">{stat.foot}</div></div>)}
       </div>
-      <div className="notice-bar" style={{marginBottom:16}}><ShieldCheck size={15} style={{flex:'none'}}/><span>{t('demoNotice')}</span></div>
+      <div className="notice-bar" style={{marginBottom:16}}><ShieldCheck size={15} style={{flex:'none'}}/><span>{authUser?t('authConfigured'):t('demoNotice')}</span></div>
       <div className="dashboard-grid">
         <section className="panel panel-pad"><div className="section-head"><h2 className="section-title">{t('recent')}</h2><Link href="/history" className="section-meta">{t('seeHistory')} <ArrowLeft size={12} style={{display:'inline'}}/></Link></div>
           {tasks.slice(0,4).map((task)=><Link href={`/history/${task.id}`} className="task-row" key={task.id} data-testid={`task-row-${task.id}`}>
@@ -283,12 +496,38 @@ function App() {
     <div className="profile-grid">
       <section className="panel panel-pad">
         <div className="section-head"><h2 className="section-title">{t('accountDetails')}</h2><UserRound size={16} className="muted"/></div>
-        <div className="profile-summary"><div className="profile-avatar">{profileName.trim().charAt(0)||'ع'}</div><div><h2 style={{fontSize:16,margin:'0 0 5px'}}>{profileName}</h2><span className="muted" style={{fontSize:10}}>{profileOrg}</span></div></div>
+        <div className="profile-summary">{authUser && avatarPath ? <img className="profile-avatar profile-avatar-image" src={`/api/storage/avatar?v=${avatarVersion}`} alt={t('avatar')} data-testid="img-profile-avatar"/> : <div className="profile-avatar">{profileName.trim().charAt(0)||'ع'}</div>}<div><h2 style={{fontSize:16,margin:'0 0 5px'}}>{profileName}</h2><span className="muted" style={{fontSize:10}}>{profileOrg}</span></div></div>
         <div className="field-group"><label className="form-label" htmlFor="profile-name">{t('displayName')}</label><input id="profile-name" className="field" value={profileName} onChange={(event)=>setProfileName(event.target.value)} placeholder={t('updateName')} data-testid="input-profile-name"/></div>
         <div className="field-group"><label className="form-label" htmlFor="profile-org">{t('organization')}</label><input id="profile-org" className="field" value={profileOrg} onChange={(event)=>setProfileOrg(event.target.value)} placeholder={t('updateOrg')} data-testid="input-profile-org"/></div>
-        <button className="button button-primary" onClick={()=>{setSaved((prev)=>({...prev,name:profileName.trim()||prev.name,org:profileOrg.trim()||prev.org}));setSavedToast(true);window.setTimeout(()=>setSavedToast(false),2200);}} data-testid="button-save-profile"><Check size={14}/>{savedToast?t('saved'):t('saveProfile')}</button>
+        <button className="button button-primary" onClick={()=>void handleSaveProfile()} data-testid="button-save-profile"><Check size={14}/>{savedToast?t('saved'):t('saveProfile')}</button>
       </section>
       <div style={{display:'grid',gap:14,alignContent:'start'}}>
+        <section className="panel panel-pad">
+          <div className="section-head"><h2 className="section-title">{t('authAccount')}</h2><LockKeyhole size={15} className="muted"/></div>
+          {authLoading && <p className="account-copy" role="status">{t('authChecking')}</p>}
+          {!authLoading && authStatus === 'unconfigured' && <div className="notice-bar"><ShieldCheck size={15}/><span>{t('authUnavailable')} <span className="mono">SUPABASE_URL</span> / <span className="mono">SUPABASE_PUBLISHABLE_KEY</span></span></div>}
+          {!authLoading && authStatus === 'offline' && <div className="notice-bar"><ShieldCheck size={15}/><span>{authError || t('apiUnavailable')}</span></div>}
+          {!authLoading && authStatus === 'configured' && !authUser && <>
+            <p className="account-copy">{t('authConfigured')}</p>
+            <form className="account-form" onSubmit={handleAuthSubmit}>
+              <div className="field-group"><label className="form-label" htmlFor="auth-email">{t('email')}</label><input id="auth-email" type="email" className="field" autoComplete="email" required maxLength={254} value={authEmail} onChange={(event)=>setAuthEmail(event.target.value)} data-testid="input-auth-email"/></div>
+              <div className="field-group"><label className="form-label" htmlFor="auth-password">{t('password')}</label><input id="auth-password" type="password" className="field" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} required minLength={8} maxLength={128} value={authPassword} onChange={(event)=>setAuthPassword(event.target.value)} data-testid="input-auth-password"/></div>
+              {authError && <div className="notice-bar notice-error" role="alert">{authError}</div>}
+              <button className="button button-primary" type="submit" disabled={authWorking} data-testid="button-auth-submit"><LockKeyhole size={14}/>{authWorking?t('authWorking'):authMode === 'login'?t('signIn'):t('signUp')}</button>
+            </form>
+            <button type="button" className="text-button" onClick={()=>{setAuthMode(authMode === 'login'?'signup':'login');setAuthError('');setAuthNotice('');}} data-testid="button-auth-mode">{authMode === 'login'?t('switchToSignUp'):t('switchToSignIn')}</button>
+          </>}
+          {!authLoading && authUser && <div className="account-signed-in">
+            <div className="account-email"><span className="online-dot"/><span>{t('signedInAs')} <strong>{authUser.email}</strong></span></div>
+            <p className="account-copy">{t('authConfigured')}</p>
+            <label className={`button button-quiet button-small ${avatarWorking?'disabled':''}`} htmlFor="avatar-file"><UserRound size={13}/>{avatarWorking?t('authWorking'):t('uploadAvatar')}</label>
+            <input id="avatar-file" className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAvatarUpload} disabled={avatarWorking} data-testid="input-avatar-file"/>
+            <small className="account-hint">{t('avatarHint')}</small>
+            <button type="button" className="button button-danger button-small" onClick={()=>void handleSignOut()} disabled={authWorking} data-testid="button-sign-out">{t('signOut')}</button>
+          </div>}
+          {authNotice && <div className="notice-bar account-message" role="status">{authNotice}</div>}
+          {workspaceError && <div className="notice-bar notice-error account-message" role="alert">{workspaceError}</div>}
+        </section>
         <section className="panel panel-pad"><div className="section-head"><h2 className="section-title">{t('interface')}</h2><Settings2 size={16} className="muted"/></div>
           <div className="setting-row"><div><strong>{t('language')}</strong><small>{t('languageDesc')}</small></div><button className="button button-quiet button-small" onClick={toggleLanguage}>{isAr?'العربية':'English'} <ChevronDown size={12}/></button></div>
           <div className="setting-row"><div><strong>{t('notifications')}</strong><small>{t('notificationDesc')}</small></div><button role="switch" aria-checked={notices} className={`toggle ${notices?'on':''}`} onClick={()=>setSaved((prev)=>({...prev,notices:!prev.notices}))} aria-label={t('notifications')} data-testid="toggle-notifications"/></div>
@@ -316,7 +555,7 @@ function App() {
     </aside>
     <main className="main-area">
       <header className="topbar"><div className="crumb">{t(pageTitleKey)}</div><div className="top-actions">
-        <span className="status-chip"><span style={{width:6,height:6,borderRadius:'50%',background:'#7bb19c'}}/>{t('preview')}</span>
+        <button type="button" className="status-chip status-button" onClick={()=>setLocation('/profile')} data-testid="button-auth-status"><span className={`online-dot ${authUser?'':'offline-dot'}`}/>{authUser?'Supabase':t('localOnly')}</button>
         <button className="lang-button" onClick={toggleLanguage} data-testid="button-language">{t('languageSwitch')}</button>
         <Link href="/profile" className="icon-button" aria-label={t('profile')} data-testid="link-profile"><UserRound size={16}/></Link>
       </div></header>
